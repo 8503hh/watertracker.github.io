@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Water Battle</title>
+<style>
+:root{--bg:#f3f8fb;--card:#fff;--text:#14313f;--muted:#5d7886;--accent:#1d8fd1;--accent2:#14b8a6;--line:#d8e6ee;--win:#f59e0b;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e1a22;--card:#16262f;--text:#e6f2f8;--muted:#8fa9b7;--accent:#4fb3f0;--accent2:#2dd4bf;--line:#26404d;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0e1a22;--card:#16262f;--text:#e6f2f8;--muted:#8fa9b7;--accent:#4fb3f0;--accent2:#2dd4bf;--line:#26404d;color-scheme:dark}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:16px;max-width:760px;margin-inline:auto}
+h1{font-size:1.5rem;margin:8px 0 4px;text-align:center}
+.banner{text-align:center;font-weight:600;padding:10px;border-radius:12px;background:var(--card);border:1px solid var(--line);margin:12px 0 16px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;text-align:center}
+.card.lead{border-color:var(--win);box-shadow:0 0 0 2px var(--win)}
+.name{width:100%;text-align:center;font-size:1.1rem;font-weight:700;background:transparent;border:0;border-bottom:1px dashed var(--line);color:var(--text);padding:4px}
+.big{font-size:2.6rem;font-weight:800;margin:10px 0 0;color:var(--accent)}
+.unit{color:var(--muted);font-size:.85rem}
+.bar{height:10px;background:var(--line);border-radius:6px;overflow:hidden;margin:10px 0 4px}
+.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .3s}
+.btns{display:grid;gap:8px;margin-top:12px}
+button{font:inherit;font-weight:700;border:0;border-radius:12px;padding:14px 8px;background:var(--accent);color:#fff;cursor:pointer;touch-action:manipulation}
+button:active{transform:scale(.97)}
+button.alt{background:var(--accent2)}
+button.ghost{background:transparent;color:var(--muted);border:1px solid var(--line);font-weight:600;padding:9px}
+.row{display:flex;gap:6px}
+.row input{flex:1;min-width:0;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--text);padding:10px;font:inherit;text-align:center}
+.row button{padding:10px 14px}
+.sub{color:var(--muted);font-size:.8rem;margin-top:8px}
+.goal{display:flex;justify-content:center;align-items:center;gap:8px;margin:16px 0 4px;color:var(--muted);font-size:.9rem}
+.goal input{width:90px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text);padding:6px;text-align:center;font:inherit}
+.hist{margin-top:20px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px;overflow-x:auto}
+.hist table{width:100%;border-collapse:collapse;font-size:.9rem}
+.hist th,.hist td{padding:6px;text-align:center;border-bottom:1px solid var(--line)}
+.hist th{color:var(--muted);font-weight:600}
+#msg{text-align:center;color:var(--muted);font-size:.85rem;margin-top:12px}
+</style>
+</head>
+<body>
+<h1>💧 Water Battle</h1>
+<div class="banner" id="banner">Loading…</div>
+
+<div class="grid" id="cards"></div>
+
+<div class="goal">Daily goal <input id="goal" type="number" inputmode="numeric" value="2000" min="0" step="100"> ml</div>
+
+<div class="hist"><table><thead><tr><th>Day</th><th id="h0">P1</th><th id="h1">P2</th><th>Winner</th></tr></thead><tbody id="hist"></tbody></table></div>
+<div id="msg"></div>
+
+<script>
+(function(){
+  var DAY=86400000, db=null, logs=[], names=["Player 1","Player 2"], goal=2000;
+  var el=function(i){return document.getElementById(i)};
+  function startOfDay(t){var d=new Date(t);d.setHours(0,0,0,0);return d.getTime()}
+  function dayKey(t){var d=new Date(t);return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate()}
+
+  function totals(){
+    var s=startOfDay(Date.now()), today=[0,0], byDay={};
+    logs.forEach(function(l){
+      if(l.t>=s) today[l.p]+=l.ml;
+      var k=startOfDay(l.t); byDay[k]=byDay[k]||[0,0]; byDay[k][l.p]+=l.ml;
+    });
+    return {today:today,byDay:byDay};
+  }
+
+  function render(){
+    var T=totals(), t=T.today;
+    var lead=t[0]>t[1]?0:t[1]>t[0]?1:-1;
+    el("banner").textContent = lead<0 ? (t[0]===0?"Who will drink first? 🏁":"Dead heat! 🤝") :
+      "🏆 "+names[lead]+" leads by "+Math.abs(t[0]-t[1])+" ml today";
+    var c=el("cards");
+    if(!c.children.length){
+      for(var p=0;p<2;p++){
+        var d=document.createElement("div"); d.className="card"; d.id="card"+p;
+        d.innerHTML='<input class="name" id="name'+p+'" maxlength="20" aria-label="Name">'+
+          '<div class="big" id="tot'+p+'">0</div><div class="unit">ml today</div>'+
+          '<div class="bar"><i id="bar'+p+'"></i></div><div class="unit" id="pct'+p+'"></div>'+
+          '<div class="btns"><button data-p="'+p+'" data-ml="250">+250 ml</button>'+
+          '<button class="alt" data-p="'+p+'" data-ml="500">+500 ml</button>'+
+          '<div class="row"><input id="cust'+p+'" type="number" inputmode="numeric" placeholder="custom ml"><button class="alt" data-p="'+p+'" data-custom="1">Add</button></div>'+
+          '<button class="ghost" data-p="'+p+'" data-undo="1">Undo last</button></div>';
+        c.appendChild(d);
+        (function(pp){el("name"+pp).addEventListener("change",function(e){saveSettings(pp,e.target.value)})})(p);
+      }
+      c.addEventListener("click",onClick);
+    }
+    for(var q=0;q<2;q++){
+      var nm=el("name"+q); if(document.activeElement!==nm) nm.value=names[q];
+      el("tot"+q).textContent=t[q];
+      var pc=goal>0?Math.min(100,Math.round(t[q]/goal*100)):0;
+      el("bar"+q).style.width=pc+"%";
+      el("pct"+q).textContent=goal>0?(pc>=100?"Goal reached! 🎉":pc+"% of goal"):"";
+      el("card"+q).className="card"+(lead===q?" lead":"");
+      el("h"+q).textContent=names[q];
+    }
+    if(document.activeElement!==el("goal")) el("goal").value=goal;
+    var rows="", s=startOfDay(Date.now());
+    for(var i=0;i<7;i++){
+      var k=s-i*DAY, v=T.byDay[k]||[0,0], w=v[0]>v[1]?names[0]:v[1]>v[0]?names[1]:(v[0]?"Tie":"–");
+      var lab=i===0?"Today":new Date(k).toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"});
+      rows+="<tr><td>"+lab+"</td><td>"+v[0]+"</td><td>"+v[1]+"</td><td>"+esc(w)+"</td></tr>";
+    }
+    el("hist").innerHTML=rows;
+  }
+  function esc(s){var d=document.createElement("div");d.textContent=s;return d.innerHTML}
+
+  function onClick(e){
+    var b=e.target.closest("button"); if(!b||!db) return;
+    var p=+b.dataset.p;
+    if(b.dataset.undo){
+      var mine=logs.filter(function(l){return l.p===p}).sort(function(a,b){return b.t-a.t})[0];
+      if(mine) db.collection("log").doc(mine.id).delete().catch(err);
+      return;
+    }
+    var ml=b.dataset.custom?parseInt(el("cust"+p).value,10):parseInt(b.dataset.ml,10);
+    if(!ml||ml<=0||ml>5000) return;
+    if(b.dataset.custom) el("cust"+p).value="";
+    db.collection("log").add({p:p,ml:ml,t:Date.now()}).catch(err);
+    if(navigator.vibrate) navigator.vibrate(20);
+  }
+  function err(e){el("msg").textContent="Couldn't save: "+(e&&e.message||"unknown error")+". Make sure you're signed in with edit access."}
+
+  function saveSettings(pp,val){
+    if(!db) return;
+    var n=names.slice(); n[pp]=(val||"").trim()||("Player "+(pp+1));
+    db.doc("settings/main").set({names:n,goal:goal}).catch(err);
+  }
+
+  el("goal").addEventListener("change",function(e){
+    var g=parseInt(e.target.value,10); if(isNaN(g)||g<0||!db) return;
+    db.doc("settings/main").set({names:names,goal:g}).catch(err);
+  });
+
+  render();
+
+  claude.use("db").then(function(d){
+    if(!d){el("banner").textContent="Open this page while signed in to claude.ai to track water.";return}
+    db=d;
+    db.doc("settings/main").onSnapshot(function(s){
+      if(s.exists){var v=s.data(); names=v.names||names; goal=typeof v.goal==="number"?v.goal:goal}
+      render();
+    },err);
+    db.collection("log").where("t",">=",startOfDay(Date.now())-7*DAY).onSnapshot(function(q){
+      logs=q.docs.map(function(x){var v=x.data();return {id:x.id,p:v.p,ml:v.ml,t:v.t}});
+      render();
+    },err);
+  }).catch(function(){el("banner").textContent="Storage unavailable."});
+})();
+</script>
+</body>
+</html>

@@ -7,10 +7,8 @@
 <style>
 :root{--bg:#f3f8fb;--card:#fff;--text:#14313f;--muted:#5d7886;--accent:#1d8fd1;--accent2:#14b8a6;--line:#d8e6ee;--win:#f59e0b;
 box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e1a22;--card:#16262f;--text:#e6f2f8;--muted:#8fa9b7;--accent:#4fb3f0;--accent2:#2dd4bf;--line:#26404d;color-scheme:dark}}
-:root[data-theme="dark"]{--bg:#0e1a22;--card:#16262f;--text:#e6f2f8;--muted:#8fa9b7;--accent:#4fb3f0;--accent2:#2dd4bf;--line:#26404d;color-scheme:dark}
+@media (prefers-color-scheme:dark){:root{--bg:#0e1a22;--card:#16262f;--text:#e6f2f8;--muted:#8fa9b7;--accent:#4fb3f0;--accent2:#2dd4bf;--line:#26404d;color-scheme:dark}}
 *{box-sizing:border-box}
-html{scroll-padding-top:env(safe-area-inset-top,0px)}
 body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:16px;max-width:760px;margin-inline:auto}
 h1{font-size:1.5rem;margin:8px 0 4px;text-align:center}
 .banner{text-align:center;font-weight:600;padding:10px;border-radius:12px;background:var(--card);border:1px solid var(--line);margin:12px 0 16px}
@@ -30,7 +28,6 @@ button.ghost{background:transparent;color:var(--muted);border:1px solid var(--li
 .row{display:flex;gap:6px}
 .row input{flex:1;min-width:0;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--text);padding:10px;font:inherit;text-align:center}
 .row button{padding:10px 14px}
-.sub{color:var(--muted);font-size:.8rem;margin-top:8px}
 .goal{display:flex;justify-content:center;align-items:center;gap:8px;margin:16px 0 4px;color:var(--muted);font-size:.9rem}
 .goal input{width:90px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text);padding:6px;text-align:center;font:inherit}
 .hist{margin-top:20px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px;overflow-x:auto}
@@ -43,113 +40,153 @@ button.ghost{background:transparent;color:var(--muted);border:1px solid var(--li
 <body>
 <h1>💧 Water Battle</h1>
 <div class="banner" id="banner">Loading…</div>
-
 <div class="grid" id="cards"></div>
-
 <div class="goal">Daily goal <input id="goal" type="number" inputmode="numeric" value="2000" min="0" step="100"> ml</div>
-
 <div class="hist"><table><thead><tr><th>Day</th><th id="h0">P1</th><th id="h1">P2</th><th>Winner</th></tr></thead><tbody id="hist"></tbody></table></div>
 <div id="msg"></div>
 
-<script>
-(function(){
-  var DAY=86400000, db=null, logs=[], names=["Player 1","Player 2"], goal=2000;
-  var el=function(i){return document.getElementById(i)};
-  function startOfDay(t){var d=new Date(t);d.setHours(0,0,0,0);return d.getTime()}
-  function dayKey(t){var d=new Date(t);return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate()}
+<script type="module">
+let initializeApp, getFirestore, collection, doc, addDoc, deleteDoc, setDoc, onSnapshot, query, where;
+const FB = "https://www.gstatic.com/firebasejs/10.12.2/";
 
-  function totals(){
-    var s=startOfDay(Date.now()), today=[0,0], byDay={};
-    logs.forEach(function(l){
-      if(l.t>=s) today[l.p]+=l.ml;
-      var k=startOfDay(l.t); byDay[k]=byDay[k]||[0,0]; byDay[k][l.p]+=l.ml;
-    });
-    return {today:today,byDay:byDay};
-  }
+/* ============ PASTE YOUR FIREBASE CONFIG HERE ============ */
+const firebaseConfig = {
+  apiKey: "AIzaSyBmkIKXxTNgHzU96yplQ1V_xhZP8_IlPoU",
+  authDomain: "water-tracker-42594.firebaseapp.com",
+  projectId: "water-tracker-42594",
+  storageBucket: "water-tracker-42594.firebasestorage.app",
+  messagingSenderId: "184238176752",
+  appId: "1:184238176752:web:30a2b1c228ac7e819cc535"
+  measurementId: "G-06MCGPFMRQ"
+};
+/* ========================================================= */
 
-  function render(){
-    var T=totals(), t=T.today;
-    var lead=t[0]>t[1]?0:t[1]>t[0]?1:-1;
-    el("banner").textContent = lead<0 ? (t[0]===0?"Who will drink first? 🏁":"Dead heat! 🤝") :
-      "🏆 "+names[lead]+" leads by "+Math.abs(t[0]-t[1])+" ml today";
-    var c=el("cards");
-    if(!c.children.length){
-      for(var p=0;p<2;p++){
-        var d=document.createElement("div"); d.className="card"; d.id="card"+p;
-        d.innerHTML='<input class="name" id="name'+p+'" maxlength="20" aria-label="Name">'+
-          '<div class="big" id="tot'+p+'">0</div><div class="unit">ml today</div>'+
-          '<div class="bar"><i id="bar'+p+'"></i></div><div class="unit" id="pct'+p+'"></div>'+
-          '<div class="btns"><button data-p="'+p+'" data-ml="250">+250 ml</button>'+
-          '<button class="alt" data-p="'+p+'" data-ml="500">+500 ml</button>'+
-          '<div class="row"><input id="cust'+p+'" type="number" inputmode="numeric" placeholder="custom ml"><button class="alt" data-p="'+p+'" data-custom="1">Add</button></div>'+
-          '<button class="ghost" data-p="'+p+'" data-undo="1">Undo last</button></div>';
-        c.appendChild(d);
-        (function(pp){el("name"+pp).addEventListener("change",function(e){saveSettings(pp,e.target.value)})})(p);
-      }
-      c.addEventListener("click",onClick);
-    }
-    for(var q=0;q<2;q++){
-      var nm=el("name"+q); if(document.activeElement!==nm) nm.value=names[q];
-      el("tot"+q).textContent=t[q];
-      var pc=goal>0?Math.min(100,Math.round(t[q]/goal*100)):0;
-      el("bar"+q).style.width=pc+"%";
-      el("pct"+q).textContent=goal>0?(pc>=100?"Goal reached! 🎉":pc+"% of goal"):"";
-      el("card"+q).className="card"+(lead===q?" lead":"");
-      el("h"+q).textContent=names[q];
-    }
-    if(document.activeElement!==el("goal")) el("goal").value=goal;
-    var rows="", s=startOfDay(Date.now());
-    for(var i=0;i<7;i++){
-      var k=s-i*DAY, v=T.byDay[k]||[0,0], w=v[0]>v[1]?names[0]:v[1]>v[0]?names[1]:(v[0]?"Tie":"–");
-      var lab=i===0?"Today":new Date(k).toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"});
-      rows+="<tr><td>"+lab+"</td><td>"+v[0]+"</td><td>"+v[1]+"</td><td>"+esc(w)+"</td></tr>";
-    }
-    el("hist").innerHTML=rows;
-  }
-  function esc(s){var d=document.createElement("div");d.textContent=s;return d.innerHTML}
+const DAY = 86400000;
+let logs = [], names = ["Player 1", "Player 2"], goal = 2000, db = null;
+const el = id => document.getElementById(id);
+const startOfDay = t => { const d = new Date(t); d.setHours(0,0,0,0); return d.getTime(); };
+const esc = s => { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; };
+const err = e => { el("msg").textContent = "Couldn't save: " + ((e && e.message) || "unknown error"); };
 
-  function onClick(e){
-    var b=e.target.closest("button"); if(!b||!db) return;
-    var p=+b.dataset.p;
-    if(b.dataset.undo){
-      var mine=logs.filter(function(l){return l.p===p}).sort(function(a,b){return b.t-a.t})[0];
-      if(mine) db.collection("log").doc(mine.id).delete().catch(err);
-      return;
-    }
-    var ml=b.dataset.custom?parseInt(el("cust"+p).value,10):parseInt(b.dataset.ml,10);
-    if(!ml||ml<=0||ml>5000) return;
-    if(b.dataset.custom) el("cust"+p).value="";
-    db.collection("log").add({p:p,ml:ml,t:Date.now()}).catch(err);
-    if(navigator.vibrate) navigator.vibrate(20);
-  }
-  function err(e){el("msg").textContent="Couldn't save: "+(e&&e.message||"unknown error")+". Make sure you're signed in with edit access."}
-
-  function saveSettings(pp,val){
-    if(!db) return;
-    var n=names.slice(); n[pp]=(val||"").trim()||("Player "+(pp+1));
-    db.doc("settings/main").set({names:n,goal:goal}).catch(err);
-  }
-
-  el("goal").addEventListener("change",function(e){
-    var g=parseInt(e.target.value,10); if(isNaN(g)||g<0||!db) return;
-    db.doc("settings/main").set({names:names,goal:g}).catch(err);
+function totals() {
+  const s = startOfDay(Date.now()), today = [0, 0], byDay = {};
+  logs.forEach(l => {
+    if (l.t >= s) today[l.p] += l.ml;
+    const k = startOfDay(l.t);
+    byDay[k] = byDay[k] || [0, 0];
+    byDay[k][l.p] += l.ml;
   });
+  return { today, byDay };
+}
 
-  render();
+function render() {
+  const T = totals(), t = T.today;
+  const lead = t[0] > t[1] ? 0 : t[1] > t[0] ? 1 : -1;
+  el("banner").textContent = lead < 0
+    ? (t[0] === 0 ? "Who will drink first? 🏁" : "Dead heat! 🤝")
+    : "🏆 " + names[lead] + " leads by " + Math.abs(t[0] - t[1]) + " ml today";
 
-  claude.use("db").then(function(d){
-    if(!d){el("banner").textContent="Open this page while signed in to claude.ai to track water.";return}
-    db=d;
-    db.doc("settings/main").onSnapshot(function(s){
-      if(s.exists){var v=s.data(); names=v.names||names; goal=typeof v.goal==="number"?v.goal:goal}
+  const c = el("cards");
+  if (!c.children.length) {
+    for (let p = 0; p < 2; p++) {
+      const d = document.createElement("div");
+      d.className = "card"; d.id = "card" + p;
+      d.innerHTML =
+        '<input class="name" id="name' + p + '" maxlength="20" aria-label="Name">' +
+        '<div class="big" id="tot' + p + '">0</div><div class="unit">ml today</div>' +
+        '<div class="bar"><i id="bar' + p + '"></i></div><div class="unit" id="pct' + p + '"></div>' +
+        '<div class="btns">' +
+        '<button data-p="' + p + '" data-ml="250">+250 ml</button>' +
+        '<button class="alt" data-p="' + p + '" data-ml="500">+500 ml</button>' +
+        '<div class="row"><input id="cust' + p + '" type="number" inputmode="numeric" placeholder="custom ml">' +
+        '<button class="alt" data-p="' + p + '" data-custom="1">Add</button></div>' +
+        '<button class="ghost" data-p="' + p + '" data-undo="1">Undo last</button></div>';
+      c.appendChild(d);
+      el("name" + p).addEventListener("change", e => saveNames(p, e.target.value));
+    }
+    c.addEventListener("click", onClick);
+  }
+  for (let q = 0; q < 2; q++) {
+    const nm = el("name" + q);
+    if (document.activeElement !== nm) nm.value = names[q];
+    el("tot" + q).textContent = t[q];
+    const pc = goal > 0 ? Math.min(100, Math.round(t[q] / goal * 100)) : 0;
+    el("bar" + q).style.width = pc + "%";
+    el("pct" + q).textContent = goal > 0 ? (pc >= 100 ? "Goal reached! 🎉" : pc + "% of goal") : "";
+    el("card" + q).className = "card" + (lead === q ? " lead" : "");
+    el("h" + q).textContent = names[q];
+  }
+  if (document.activeElement !== el("goal")) el("goal").value = goal;
+
+  let rows = "";
+  const s = startOfDay(Date.now());
+  for (let i = 0; i < 7; i++) {
+    const k = s - i * DAY, v = T.byDay[k] || [0, 0];
+    const w = v[0] > v[1] ? names[0] : v[1] > v[0] ? names[1] : (v[0] ? "Tie" : "–");
+    const lab = i === 0 ? "Today" : new Date(k).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+    rows += "<tr><td>" + lab + "</td><td>" + v[0] + "</td><td>" + v[1] + "</td><td>" + esc(w) + "</td></tr>";
+  }
+  el("hist").innerHTML = rows;
+}
+
+function onClick(e) {
+  const b = e.target.closest("button");
+  if (!b || !db) return;
+  const p = +b.dataset.p;
+  if (b.dataset.undo) {
+    const mine = logs.filter(l => l.p === p).sort((a, b) => b.t - a.t)[0];
+    if (mine) deleteDoc(doc(db, "log", mine.id)).catch(err);
+    return;
+  }
+  const ml = b.dataset.custom ? parseInt(el("cust" + p).value, 10) : parseInt(b.dataset.ml, 10);
+  if (!ml || ml <= 0 || ml > 5000) return;
+  if (b.dataset.custom) el("cust" + p).value = "";
+  addDoc(collection(db, "log"), { p, ml, t: Date.now() }).catch(err);
+  if (navigator.vibrate) navigator.vibrate(20);
+}
+
+function saveNames(p, val) {
+  if (!db) return;
+  const n = names.slice();
+  n[p] = (val || "").trim() || ("Player " + (p + 1));
+  setDoc(doc(db, "settings", "main"), { names: n, goal }).catch(err);
+}
+
+el("goal").addEventListener("change", e => {
+  const g = parseInt(e.target.value, 10);
+  if (isNaN(g) || g < 0 || !db) return;
+  setDoc(doc(db, "settings", "main"), { names, goal: g }).catch(err);
+});
+
+render();
+
+window.addEventListener("error", e => { el("msg").textContent = "Error: " + e.message; });
+
+if (firebaseConfig.apiKey === "PASTE_ME") {
+  el("banner").textContent = "Paste your Firebase config into index.html to get started.";
+} else {
+  try {
+    const [appMod, fsMod] = await Promise.all([import(FB + "firebase-app.js"), import(FB + "firebase-firestore.js")]);
+    ({ initializeApp } = appMod);
+    ({ getFirestore, collection, doc, addDoc, deleteDoc, setDoc, onSnapshot, query, where } = fsMod);
+    db = getFirestore(initializeApp(firebaseConfig));
+    onSnapshot(doc(db, "settings", "main"), s => {
+      if (s.exists()) {
+        const v = s.data();
+        names = v.names || names;
+        goal = typeof v.goal === "number" ? v.goal : goal;
+      }
       render();
-    },err);
-    db.collection("log").where("t",">=",startOfDay(Date.now())-7*DAY).onSnapshot(function(q){
-      logs=q.docs.map(function(x){var v=x.data();return {id:x.id,p:v.p,ml:v.ml,t:v.t}});
+    }, err);
+    onSnapshot(query(collection(db, "log"), where("t", ">=", startOfDay(Date.now()) - 7 * DAY)), q => {
+      logs = q.docs.map(x => ({ id: x.id, ...x.data() }));
       render();
-    },err);
-  }).catch(function(){el("banner").textContent="Storage unavailable."});
-})();
+    }, err);
+  } catch (e) {
+    el("banner").textContent = "Couldn't load Firebase. Check your connection or ad blocker.";
+    el("msg").textContent = String((e && e.message) || e);
+  }
+}
 </script>
 </body>
 </html>
